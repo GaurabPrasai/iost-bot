@@ -1,66 +1,95 @@
-import requests, re
+import re
+import requests
 import urllib3
 from bs4 import BeautifulSoup
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-url = "https://iost.tu.edu.np/notices"
-response = requests.get(url, verify=False)
-soup = BeautifulSoup(response.text, 'html.parser')
+URL = "https://iost.tu.edu.np/notices"
 
-notices = soup.select("div.recent-post-wrapper a")
-dates = soup.select("div.recent-post-wrapper div.date")
-
-# Expanded regex patterns for all M.Sc branches
-# Expanded dictionary with strict M.Sc. bounding and new Bachelor programs
-COURSE_PATTERNS = {
-    # Bachelor Subjects
-    "CSIT": r"CSIT|सीएसआईटी", 
-    "BIT": r"\bBIT\b|बिआईटी|Information Technology",
-    "BTECH Food": r"(?:B\.?\s*Tech).*(?:Food)|(?:Food).*(?:B\.?\s*Tech)|B\.?\s*Tech|Food Technology",
-    "B MATH": r"Bachelor in Mathematical Science|B\.?\s*Math",
-    "BDS (Data Science)": r"Bachelor in Data Science|BDS",
-    
-    # STRICT M.Sc Subjects
-    "MSC Physics": r"(?:M\.?\s*Sc|स्नातकोत्तर).*(?:Physics|भौतिक)|(?:Physics|भौतिक).*(?:M\.?\s*Sc|स्नातकोत्तर)",
-    "MSC Biotechnology": r"(?:M\.?\s*Sc|स्नातकोत्तर).*(?:Biotechnology)|(?:Biotechnology).*(?:M\.?\s*Sc|स्नातकोत्तर)",
-    "MSC Mathematics": r"(?:M\.?\s*Sc|स्नातकोत्तर).*(?:Math(?:ematics)?|गणित)|(?:Math(?:ematics)?|गणित).*(?:M\.?\s*Sc|स्नातकोत्तर)",
-    "MSC Statistics": r"(?:M\.?\s*Sc|स्नातकोत्तर).*(?:Stat(?:istics)?|तथ्याङ्क)|(?:Stat(?:istics)?|तथ्याङ्क).*(?:M\.?\s*Sc|स्नातकोत्तर)",
-    "MSC Chemistry": r"(?:M\.?\s*Sc|स्नातकोत्तर).*(?:Chemistry|रसायन)|(?:Chemistry|रसायन).*(?:M\.?\s*Sc|स्नातकोत्तर)",
-    "MSC Food": r"(?:M\.?\s*Sc|स्नातकोत्तर).*(?:Food)|(?:Food).*(?:M\.?\s*Sc|स्नातकोत्तर)",
-    
-    # General Degree Catch-alls
-    "MSC Generic": r"M\.?\s*Sc|स्नातकोत्तर", 
-    "BSC Generic": r"B\.?\s*Sc\.?(?![\.\s]*CSIT)" 
+# Courses with their keyword variants (English + Nepali)
+# BSC is handled separately via regex — do not add here
+COURSE_KEYWORDS = {
+    "CSIT":  ["B.Sc.CSIT", "CSIT", "सीएसआईटी"],
+    "BIT":   ["BIT", "बिट"],
+    "BTECH": ["B.Tech", "Food Technology"],
+    "MSC":   ["M.Sc"],
 }
 
+# Roman numerals in order — longer ones must come first
+ROMAN = {"VIII": 8, "VII": 7, "VI": 6, "IV": 4, "V": 5, "III": 3, "II": 2, "I": 1}
+
+
 def detect_course(title):
-    matched = []
-    
-    for course, pattern in COURSE_PATTERNS.items():
-        if re.search(pattern, title, re.IGNORECASE):
-            matched.append(course)
-            
-    # Cleanup logic: If a specific MSC (like MSC Physics) is found, remove "MSC Generic"
-    msc_specifics = [c for c in matched if c.startswith("MSC ") and c != "MSC Generic"]
-    if msc_specifics and "MSC Generic" in matched:
-        matched.remove("MSC Generic")
-        
+    matched = [
+        course for course, keywords in COURSE_KEYWORDS.items()
+        if any(kw in title for kw in keywords)
+    ]
+
+    # BSC: match "B.Sc" only when NOT followed by optional dots/spaces then "CSIT"
+    if re.search(r"B\.?Sc\.?(?![\.\s]*CSIT)", title):
+        matched.append("BSC")
+
     return matched if matched else ["ALL"]
 
-for notice, date in zip(notices, dates):
-    h5_tag = notice.find("h5")
-    if not h5_tag:
-        continue
-        
-    title = h5_tag.get_text(strip=True)
-    published_date = date.get_text(strip=True)
-    link = notice.get("href", "")
-    
-    courses = detect_course(title)
-    
-    print(f"Date: {published_date}")
-    print(f"Title: {title}")
-    print(f"Courses: {courses}")
-    print(f"Link: {link}")
-    print("-" * 60)
+
+def detect_target_batch(title):
+    """
+    Try to extract which batch year this notice targets.
+    Looks for patterns like 'IV Semester-2081' or 'III Semester - 2080'.
+    Returns a batch year int, or None if not found.
+    """
+    roman_pattern = "|".join(ROMAN.keys())  # VIII|VII|VI|...
+    match = re.search(
+        rf"({roman_pattern})\s*Semester[\s\-]+(\d{{4}})",
+        title,
+        re.IGNORECASE
+    )
+    if match:
+        sem_num = ROMAN.get(match.group(1).upper())
+        year = int(match.group(2))
+        if sem_num:
+            # Semester 1-2 → batch year, 3-4 → year-1, etc.
+            batch_year = year - ((sem_num - 1) // 2)
+            return batch_year
+    return None
+
+
+def scrape_notices():
+    """
+    Fetch and parse the notices page.
+    Returns a list of dicts with keys: id, title, url, date, courses, target_batch
+    """
+    try:
+        response = requests.get(URL, verify=False, timeout=10)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        print(f"[Scraper] Error fetching page: {e}")
+        return []
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    notice_tags = soup.select("div.recent-post-wrapper a")
+    date_tags   = soup.select("div.recent-post-wrapper div.date")
+
+    results = []
+    for notice, date in zip(notice_tags, date_tags):
+        href = notice.get("href", "")
+        notice_id = href.split("/")[-1]
+
+        if not notice_id.isdigit():
+            continue
+
+        h5 = notice.find("h5")
+        title = h5.text.strip() if h5 else ""
+
+        results.append({
+            "id":           int(notice_id),
+            "title":        title,
+            "url":          href,
+            "date":         date.text.strip(),
+            "courses":      detect_course(title),
+            "target_batch": detect_target_batch(title),
+        })
+
+    return results
