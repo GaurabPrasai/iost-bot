@@ -55,7 +55,7 @@ async def post_init(app):
     scheduler.add_job(
         scrape_and_notify,
         trigger="interval",
-        minutes=5,
+        minutes=60,
         args=[app.bot],
         id="scraper_job",
     )

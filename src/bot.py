@@ -55,7 +55,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/mystatus — See your current registration\n"
         "/unsubscribe — Stop receiving notices\n"
         "/help — Show this message\n\n"
-        "Notices are checked every 5 minutes. You'll only receive notices "
+        "Notices are checked every hour. You'll only receive notices "
         "relevant to your course and batch year.",
         parse_mode="Markdown",
     )
