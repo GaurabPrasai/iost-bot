@@ -26,11 +26,12 @@ def init_db():
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS seen_notices (
-            notice_id   INTEGER PRIMARY KEY,
-            title       TEXT,
-            url         TEXT,
-            courses     TEXT,
-            detected_at TEXT DEFAULT CURRENT_TIMESTAMP
+            notice_id    INTEGER PRIMARY KEY,
+            title        TEXT,
+            url          TEXT,
+            courses      TEXT,
+            notice_date  TEXT,
+            detected_at  TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
@@ -117,11 +118,11 @@ def is_notice_seen(notice_id):
     return result is not None
 
 
-def mark_notice_seen(notice_id, title, url, courses):
+def mark_notice_seen(notice_id, title, url, courses, notice_date):
     conn = get_connection()
     conn.execute(
-        "INSERT OR IGNORE INTO seen_notices (notice_id, title, url, courses) VALUES (?, ?, ?, ?)",
-        (notice_id, title, url, ",".join(courses))
+        "INSERT OR IGNORE INTO seen_notices (notice_id, title, url, courses, notice_date) VALUES (?, ?, ?, ?, ?)",
+        (notice_id, title, url, ",".join(courses), notice_date)
     )
     conn.commit()
     conn.close()
@@ -146,13 +147,15 @@ def mark_notice_sent(notice_id, chat_id):
     conn.commit()
     conn.close()
 
-def get_recent_notices(course, limit=5):
+def get_recent_notices(course, weeks=1):
+    from datetime import datetime, timedelta
+    cutoff = (datetime.now() - timedelta(weeks=weeks)).strftime("%Y-%m-%d")
     conn = get_connection()
     rows = conn.execute("""
-        SELECT * FROM seen_notices 
+        SELECT * FROM seen_notices
         WHERE courses LIKE ?
-        ORDER BY detected_at DESC
-        LIMIT ?
-    """, (f"%{course}%", limit)).fetchall()
+        AND notice_date >= ?
+        ORDER BY notice_date DESC
+    """, (f"%{course}%", cutoff)).fetchall()
     conn.close()
     return [dict(r) for r in rows]

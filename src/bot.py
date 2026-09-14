@@ -89,6 +89,9 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardRemove(),
     )
 async def latest(update, context):
+    from datetime import datetime, timedelta
+    from scraper import scrape_until
+
     chat_id    = update.effective_chat.id
     subscriber = get_subscriber(chat_id)
 
@@ -96,15 +99,28 @@ async def latest(update, context):
         await update.message.reply_text("Register first with /start.")
         return
 
-    notices = get_recent_notices(subscriber["course"])
+    course = subscriber["course"]
+
+    # try DB first — last 1 week
+    notices = get_recent_notices(course, weeks=1)
+
+    # if nothing in DB, scrape live up to 6 months
+    if not notices:
+        await update.message.reply_text("Fetching notices... this may take a moment.")
+        cutoff = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
+        all_notices = scrape_until(cutoff)
+        notices = [n for n in all_notices if course in n["courses"] or "ALL" in n["courses"]]
 
     if not notices:
-        await update.message.reply_text("No notices found yet.")
+        await update.message.reply_text("No notices found for your course in the past 6 months.")
         return
 
-    for notice in notices:
+    for notice in notices[:10]:  # cap at 10 to avoid spam
         await update.message.reply_text(
-            f"📢 {notice['title']}\n\n🔗 {notice['url']}\n📅 {notice['detected_at']}"
+            f"📢 *{notice['title']}*\n\n"
+            f"🔗 {notice['url']}\n"
+            f"📅 {notice['date']}",
+            parse_mode="Markdown"
         )
 
 

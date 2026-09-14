@@ -1,5 +1,4 @@
-import logging
-import os
+import logging, os
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
@@ -24,7 +23,6 @@ logging.basicConfig(
     ],
 )
 
-
 async def scrape_and_notify(bot):
     print("[Scheduler] Scraping notices...")
     notices = scrape_notices()
@@ -32,7 +30,11 @@ async def scrape_and_notify(bot):
     for notice in notices:
         if is_notice_seen(notice["id"]):
             continue
-        mark_notice_seen(notice["id"], notice["title"], notice["url"], notice["courses"])
+        mark_notice_seen(
+            notice["id"], notice["title"],
+            notice["url"], notice["courses"],
+            notice["date"]
+        )
         await send_notice_to_subscribers(bot, notice)
         new_count += 1
     print(f"[Scheduler] Done — {new_count} new notice(s) found.")
@@ -41,8 +43,14 @@ async def scrape_and_notify(bot):
 async def error_handler(update, context):
     print(f"[Error] {context.error}")
 
-
 async def post_init(app):
+    await app.bot.set_my_commands([
+        ("start",       "Register or re-register"),
+        ("latest",      "See recent notices for your course"),
+        ("mystatus",    "Check your registration details"),
+        ("unsubscribe", "Stop receiving notices"),
+        ("help",        "Show all available commands"),
+    ])
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
         scrape_and_notify,
@@ -56,7 +64,6 @@ async def post_init(app):
     # Run once immediately on startup
     await scrape_and_notify(app.bot)
     print("[Main] Scheduler started.")
-
 
 def main():
     if not BOT_TOKEN:

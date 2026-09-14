@@ -93,3 +93,58 @@ def scrape_notices():
         })
 
     return results
+
+def scrape_until(cutoff_date):
+    """
+    Scrapes pages until notices older than cutoff_date are found.
+    cutoff_date: string in format "YYYY-MM-DD"
+    Returns all notices found within range.
+    """
+    results = []
+    url = URL
+
+    while url:
+        try:
+            response = requests.get(url, verify=False, timeout=10)
+            response.raise_for_status()
+        except requests.RequestException as e:
+            print(f"[Scraper] Pagination error: {e}")
+            break
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        notice_tags = soup.select("div.recent-post-wrapper a")
+        date_tags   = soup.select("div.recent-post-wrapper div.date")
+
+        page_done = False
+        for notice, date in zip(notice_tags, date_tags):
+            href = notice.get("href", "")
+            notice_id = href.split("/")[-1]
+            if not notice_id.isdigit():
+                continue
+
+            notice_date = date.text.strip()
+
+            # stop if older than cutoff
+            if notice_date < cutoff_date:
+                page_done = True
+                break
+
+            h5 = notice.find("h5")
+            title = h5.text.strip() if h5 else ""
+            results.append({
+                "id":           int(notice_id),
+                "title":        title,
+                "url":          href,
+                "date":         notice_date,
+                "courses":      detect_course(title),
+                "target_batch": detect_target_batch(title),
+            })
+
+        if page_done:
+            break
+
+        # find next page link — check what class/text your site uses
+        next_link = soup.select_one("a.next, a[rel='next'], li.next a")
+        url = next_link["href"] if next_link else None
+
+    return results
