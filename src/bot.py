@@ -27,7 +27,7 @@ VALID_BATCH_RANGE   = range(2074, CURRENT_NEPALI_YEAR + 1)
 # ── Commands ───────────────────────────────────────────────────────────────────
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"[Bot] /start received from {update.effective_chat.id}")  # add this
+    print(f"[Bot] /start received from {update.effective_chat.id}")
     chat_id  = update.effective_chat.id
     username = update.effective_user.username
 
@@ -119,7 +119,7 @@ async def latest(update, context):
         await update.message.reply_text(
             f"📢 *{notice['title']}*\n\n"
             f"🔗 {notice['url']}\n"
-            f"📅 {notice['date']}",
+            f"📅 {notice['notice_date']}",
             parse_mode="Markdown"
         )
 
